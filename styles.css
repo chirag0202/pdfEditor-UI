@@ -30,6 +30,7 @@ button { color: inherit; }
 	display: flex;
 	width: 250px;
 	flex-direction: column;
+	overflow-y: auto;
 	border-right: 1px solid #edf0ed;
 	background: #fff;
 	padding: 28px 17px 17px;
@@ -148,6 +149,17 @@ h2 { margin: 0; font-family: Manrope, sans-serif; font-size: 17px; font-weight: 
 .drop-copy strong { display: block; overflow: hidden; color: #58645d; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .drop-copy span { display: block; margin-top: 4px; color: #a1a9a3; font-size: 9px; }
 .browse-link { margin-left: auto; color: #37865e; font-size: 9px; font-weight: 600; white-space: nowrap; }
+.merge-file-list { display: grid; gap: 6px; margin-top: 8px; }
+.merge-file-row { display: flex; min-width: 0; align-items: center; gap: 9px; border: 1px solid #e9eee9; border-radius: 7px; background: #fff; padding: 7px 8px; }
+.merge-file-badge { display: grid; width: 28px; height: 31px; flex: 0 0 28px; place-items: center; border-radius: 5px; background: #eff6f0; color: #478c61; font-size: 7px; font-weight: 700; }
+.merge-file-details { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.merge-file-details strong { overflow: hidden; color: #58645d; font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.merge-file-details span { color: #9ba39d; font-size: 8px; }
+.merge-file-controls { display: flex; align-items: center; gap: 3px; }
+.merge-order-button, .merge-remove-button { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #e9ede9; border-radius: 5px; background: #fff; color: #718078; cursor: pointer; font-size: 12px; }
+.merge-order-button:disabled { opacity: .35; cursor: default; }
+.merge-remove-button { border-color: transparent; color: #a35f56; font-size: 17px; }
+.merge-remove-button:hover:not(:disabled) { border-color: #f0dedb; background: #fff8f6; }
 .option-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin-top: 14px; }
 .option-fields:empty { display: none; }
 .field-group { display: grid; gap: 6px; }

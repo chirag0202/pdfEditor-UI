@@ -12,11 +12,8 @@ const tools = {
 		icon: "⇶",
 		description: "Bring your documents together into one tidy PDF. Files are merged in the order you choose.",
 		button: "Merge PDFs",
-		tip: "Add at least two PDFs. Arrange them in the order you want before merging.",
-		fields: [
-			{ key: "first", label: "First PDF", accept: ".pdf,application/pdf", help: "PDF · up to 50 MB" },
-			{ key: "second", label: "Second PDF", accept: ".pdf,application/pdf", help: "Add another PDF" }
-		]
+		tip: "Add two or more PDFs and arrange them in order. Each file can be up to 50 MB; total upload is limited to 100 MB.",
+		fields: [{ key: "files", label: "Choose PDFs to merge", accept: ".pdf,application/pdf", help: "Select multiple PDFs · up to 50 MB each", multiple: true }]
 	},
 	split: {
 		title: "Split PDF",
@@ -63,12 +60,38 @@ const tools = {
 		tip: "This extracts selectable text. Original page layouts, images, and formatting are not preserved.",
 		fields: [{ key: "file", label: "Choose a PDF", accept: ".pdf,application/pdf", help: "PDF · up to 50 MB" }],
 		options: [{ name: "format", label: "Export as", type: "select", value: "docx", options: [["docx", "Word document (.docx)"], ["txt", "Plain text (.txt)"]] }]
+	},
+	protection: {
+		title: "Password protection",
+		icon: "⌑",
+		description: "Add or remove file-open passwords, or remove editing restrictions from Word and Excel files.",
+		button: "Protect document",
+		tip: "Removing a file-open password requires the current password. Word editing and Excel sheet/workbook locks can be removed separately without changing file-open encryption. Passwords are not saved by this interface.",
+		fields: [{
+			key: "file",
+			label: "Choose a document",
+			accept: ".pdf,.docx,.xlsx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument",
+			extensions: [".pdf", ".docx", ".xlsx", ".pptx"],
+			help: "PDF, DOCX, XLSX, or PPTX · up to 50 MB"
+		}],
+		options: [
+			{ name: "action", label: "Action", type: "select", value: "add", options: [
+				["add", "Add file-open password"],
+				["remove-password", "Remove file-open password (current password required)"],
+				["remove-restrictions", "Remove Word / Excel editing restrictions"]
+			] },
+			{ name: "password", label: "New password", type: "password", value: "", showWhen: "add" },
+			{ name: "confirmPassword", label: "Confirm new password", type: "password", value: "", showWhen: "add" },
+			{ name: "currentPassword", label: "Current file-open password", type: "password", value: "", showWhen: "remove-password" }
+		]
 	}
 };
 
 const state = {
 	tool: "view",
 	files: new Map(),
+	mergeFiles: [],
+	filenameTouched: false,
 	pageCount: 0,
 	currentPage: 1,
 	previewFile: null,
@@ -108,7 +131,11 @@ const elements = {
 };
 
 function apiBase() {
-	return elements.apiUrl.value.trim().replace(/\/+$/, "");
+	const base = elements.apiUrl.value.trim().replace(/\/+$/, "");
+	if (window.location.protocol === "https:" && new URL(base).protocol !== "https:") {
+		throw new Error("Use an HTTPS API URL when the workspace is loaded over HTTPS.");
+	}
+	return base;
 }
 
 function switchTool(name) {
@@ -116,6 +143,8 @@ function switchTool(name) {
 	if (!tool) return;
 	state.tool = name;
 	state.files.clear();
+	state.mergeFiles = [];
+	state.filenameTouched = false;
 	clearResult();
 	elements.error.hidden = true;
 	document.querySelectorAll(".nav-item").forEach(button => {
@@ -140,6 +169,9 @@ function switchTool(name) {
 
 function renderFields(tool) {
 	elements.fields.replaceChildren();
+	if (state.tool === "merge") {
+		renderMergeField(tool.fields[0]);
+	} else {
 	for (const field of tool.fields) {
 		const wrapper = document.createElement("div");
 		wrapper.className = "upload-field";
@@ -187,6 +219,7 @@ function renderFields(tool) {
 			if (file) setFile(field.key, file, input, drop, filename, helper);
 		});
 	}
+	}
 
 	elements.options.replaceChildren();
 	for (const field of tool.options ?? []) {
@@ -209,11 +242,23 @@ function renderFields(tool) {
 			input.type = field.type ?? "text";
 			if (field.min) input.min = field.min;
 			input.placeholder = field.placeholder ?? "";
+			if (field.type === "password") {
+				input.autocomplete = "off";
+				input.autocapitalize = "off";
+				input.maxLength = 255;
+			}
 		}
 		input.id = `option-${field.name}`;
 		input.name = field.name;
 		input.value = field.value;
-		input.required = true;
+		input.required = !field.showWhen;
+		if (field.showWhen) wrapper.dataset.showWhen = field.showWhen;
+		if (field.name === "format") {
+			input.addEventListener("change", updateFilenameHint);
+		}
+		if (field.name === "action") {
+			input.addEventListener("change", updateProtectionFields);
+		}
 		wrapper.append(label, input);
 		elements.options.append(wrapper);
 	}
@@ -223,6 +268,242 @@ function renderFields(tool) {
 		note.textContent = "Separate pages with commas; use a hyphen for a range.";
 		elements.options.append(note);
 	}
+	const filenameGroup = document.createElement("div");
+	filenameGroup.className = "field-group output-name-group";
+	const filenameLabel = document.createElement("label");
+	filenameLabel.htmlFor = "outputFilename";
+	filenameLabel.textContent = "Result filename";
+	const filenameInput = document.createElement("input");
+	filenameInput.id = "outputFilename";
+	filenameInput.name = "outputFilename";
+	filenameInput.type = "text";
+	filenameInput.value = suggestedOutputName(state.tool);
+	filenameInput.maxLength = 120;
+	filenameInput.autocomplete = "off";
+	filenameInput.spellcheck = false;
+	filenameInput.required = true;
+	filenameInput.addEventListener("input", () => {
+		state.filenameTouched = true;
+	});
+	filenameGroup.append(filenameLabel, filenameInput);
+	elements.options.append(filenameGroup);
+	updateFilenameHint();
+	updateProtectionFields();
+}
+
+function outputExtension() {
+	if (state.tool === "split") return "zip";
+	if (state.tool === "fromPdf") return readOptions().format || "docx";
+	if (state.tool === "protection") {
+		const filename = state.files.get("file")?.name ?? "";
+		return filename.split(".").pop()?.toLowerCase() || "pdf";
+	}
+	return "pdf";
+}
+
+function suggestedOutputName(toolName) {
+	switch (toolName) {
+		case "merge": return "merged";
+		case "split": return "split-pages";
+		case "extract": return "extracted-pages";
+		case "rotate": return "rotated";
+		case "protection": return "protected-document";
+		default: return "document";
+	}
+}
+
+function updateProtectionFields() {
+	if (state.tool !== "protection") return;
+	const action = document.querySelector("#option-action")?.value ?? "add";
+	const fileInput = elements.fields.querySelector('input[data-field="file"]');
+	const field = tools.protection.fields[0];
+	const restrictionsOnly = action === "remove-restrictions";
+	fileInput.accept = restrictionsOnly ? ".docx,.xlsx" : field.accept;
+	for (const wrapper of elements.options.querySelectorAll("[data-show-when]")) {
+		const visible = wrapper.dataset.showWhen === action;
+		wrapper.hidden = !visible;
+		wrapper.querySelector("input").required = visible;
+		if (!visible) wrapper.querySelector("input").value = "";
+	}
+	const actionLabels = {
+		add: "Protect document",
+		"remove-password": "Remove file-open password",
+		"remove-restrictions": "Remove editing restrictions"
+	};
+	elements.submitLabel.textContent = actionLabels[action];
+}
+
+function updateFilenameHint() {
+	const group = document.querySelector(".output-name-group");
+	if (!group) return;
+	let hint = group.querySelector(".field-note");
+	if (!hint) {
+		hint = document.createElement("div");
+		hint.className = "field-note";
+		group.append(hint);
+	}
+	hint.textContent = `The .${outputExtension()} extension will be added automatically.`;
+}
+
+function resultFilename() {
+	const input = document.querySelector("#outputFilename");
+	const extension = outputExtension();
+	let base = input?.value.trim() ?? "";
+	base = base.replace(new RegExp(`\\.${extension}$`, "i"), "");
+	base = base.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/g, "").trim();
+	if (!base) {
+		throw new Error("Enter a valid result filename.");
+	}
+	if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(base)) {
+		throw new Error("Choose a filename other than a reserved Windows device name.");
+	}
+	return `${base}.${extension}`;
+}
+
+function renderMergeField(field) {
+	const wrapper = document.createElement("div");
+	wrapper.className = "upload-field";
+	const label = document.createElement("span");
+	label.className = "upload-label";
+	label.textContent = field.label;
+	const drop = document.createElement("label");
+	drop.className = "dropzone";
+	drop.dataset.field = field.key;
+	const input = document.createElement("input");
+	input.type = "file";
+	input.accept = field.accept;
+	input.multiple = true;
+	input.setAttribute("aria-label", field.label);
+	const icon = document.createElement("span");
+	icon.className = "upload-icon";
+	icon.setAttribute("aria-hidden", "true");
+	icon.textContent = "↑";
+	const copy = document.createElement("span");
+	copy.className = "drop-copy";
+	const filename = document.createElement("strong");
+	filename.textContent = "Drop PDFs here or browse";
+	const helper = document.createElement("span");
+	helper.textContent = field.help;
+	copy.append(filename, helper);
+	const browse = document.createElement("span");
+	browse.className = "browse-link";
+	browse.textContent = "Browse files";
+	drop.append(input, icon, copy, browse);
+	const list = document.createElement("div");
+	list.className = "merge-file-list";
+	list.setAttribute("aria-label", "PDF merge order");
+	wrapper.append(label, drop, list);
+	elements.fields.append(wrapper);
+
+	input.addEventListener("change", () => {
+		addMergeFiles(Array.from(input.files ?? []), helper);
+		input.value = "";
+	});
+	drop.addEventListener("dragover", event => {
+		event.preventDefault();
+		drop.classList.add("dragging");
+	});
+	drop.addEventListener("dragleave", () => drop.classList.remove("dragging"));
+	drop.addEventListener("drop", event => {
+		event.preventDefault();
+		drop.classList.remove("dragging");
+		addMergeFiles(Array.from(event.dataTransfer?.files ?? []), helper);
+	});
+	renderMergeFiles(list, filename, helper, drop);
+}
+
+function addMergeFiles(files, helper) {
+	const rejected = [];
+	let totalSize = state.mergeFiles.reduce((total, file) => total + file.size, 0);
+	for (const file of files) {
+		if (!isPdf(file)) {
+			rejected.push(`${file.name} is not a PDF.`);
+			continue;
+		}
+		if (file.size > 50 * 1024 * 1024) {
+			rejected.push(`${file.name} is over the 50 MB per-file limit.`);
+			continue;
+		}
+		if (totalSize + file.size > 100 * 1024 * 1024) {
+			rejected.push(`${file.name} would exceed the 100 MB total upload limit.`);
+			continue;
+		}
+		state.mergeFiles.push(file);
+		totalSize += file.size;
+	}
+	renderMergeFiles(
+		document.querySelector(".merge-file-list"),
+		document.querySelector(".drop-copy strong"),
+		helper ?? document.querySelector(".drop-copy span"),
+		document.querySelector(".dropzone")
+	);
+	elements.error.hidden = true;
+	if (rejected.length > 0) showError(rejected.join(" "));
+}
+
+function renderMergeFiles(list, filename, helper, drop) {
+	if (!list || !filename || !helper || !drop) return;
+	list.replaceChildren();
+	if (state.mergeFiles.length === 0) {
+		filename.textContent = "Drop PDFs here or browse";
+		helper.textContent = "Select multiple PDFs · up to 50 MB each";
+		drop.classList.remove("has-file");
+		return;
+	}
+	const totalSize = state.mergeFiles.reduce((total, file) => total + file.size, 0);
+	filename.textContent = `${state.mergeFiles.length} PDF${state.mergeFiles.length === 1 ? "" : "s"} selected`;
+	helper.textContent = `${formatSize(totalSize)} total · Arrange the merge order below`;
+	drop.classList.add("has-file");
+
+	state.mergeFiles.forEach((file, index) => {
+		const row = document.createElement("div");
+		row.className = "merge-file-row";
+		const badge = document.createElement("span");
+		badge.className = "merge-file-badge";
+		badge.textContent = "PDF";
+		const details = document.createElement("span");
+		details.className = "merge-file-details";
+		const name = document.createElement("strong");
+		name.textContent = file.name;
+		name.title = file.name;
+		const size = document.createElement("span");
+		size.textContent = formatSize(file.size);
+		details.append(name, size);
+
+		const controls = document.createElement("span");
+		controls.className = "merge-file-controls";
+		for (const [label, text, offset] of [
+			[`Move ${file.name} up`, "↑", -1],
+			[`Move ${file.name} down`, "↓", 1]
+		]) {
+			const move = document.createElement("button");
+			move.type = "button";
+			move.className = "merge-order-button";
+			move.textContent = text;
+			move.setAttribute("aria-label", label);
+			move.disabled = index + offset < 0 || index + offset >= state.mergeFiles.length;
+			move.addEventListener("click", () => {
+				const nextIndex = index + offset;
+				[state.mergeFiles[index], state.mergeFiles[nextIndex]] =
+					[state.mergeFiles[nextIndex], state.mergeFiles[index]];
+				renderMergeFiles(list, filename, helper, drop);
+			});
+			controls.append(move);
+		}
+
+		const remove = document.createElement("button");
+		remove.type = "button";
+		remove.className = "merge-remove-button";
+		remove.textContent = "×";
+		remove.setAttribute("aria-label", `Remove ${file.name}`);
+		remove.addEventListener("click", () => {
+			state.mergeFiles.splice(index, 1);
+			renderMergeFiles(list, filename, helper, drop);
+		});
+		controls.append(remove);
+		row.append(badge, details, controls);
+		list.append(row);
+	});
 }
 
 function setFile(key, file, input, drop, filename, helper) {
@@ -233,6 +514,14 @@ function setFile(key, file, input, drop, filename, helper) {
 		return;
 	}
 	state.files.set(key, file);
+	if (key === "file" && !state.filenameTouched
+		&& ["view", "toPdf", "fromPdf", "protection"].includes(state.tool)) {
+		const outputInput = document.querySelector("#outputFilename");
+		if (outputInput) {
+			outputInput.value = file.name.replace(/\.[^.]+$/, "");
+		}
+	}
+	updateFilenameHint();
 	filename.textContent = file.name;
 	helper.textContent = `${formatSize(file.size)} · Ready to process`;
 	drop.classList.add("has-file");
@@ -256,22 +545,50 @@ function escapeHtml(value) {
 }
 
 function readOptions() {
-	return Object.fromEntries([...elements.options.querySelectorAll("input, select")].map(input => [input.name, input.value.trim()]));
+	return Object.fromEntries([...elements.options.querySelectorAll("input, select")]
+		.map(input => [input.name, input.type === "password" ? input.value : input.value.trim()]));
 }
 
 function validateForm() {
+	if (state.tool === "merge") {
+		if (state.mergeFiles.length < 2) return "Choose at least two PDF files to merge.";
+		const totalSize = state.mergeFiles.reduce((total, file) => total + file.size, 0);
+		if (totalSize > 100 * 1024 * 1024) return "The combined PDF upload cannot exceed 100 MB.";
+		return "";
+	}
 	const config = tools[state.tool];
 	const needed = config.fields.map(field => [field, state.files.get(field.key)]);
 	const missing = needed.find(([, file]) => !file);
 	if (missing) return `Choose a file for “${missing[0].label}” first.`;
 	for (const [field, file] of needed) {
-		if ((field.accept.includes("application/pdf") || field.accept.includes(".pdf")) && !isPdf(file)) {
+		if (!field.extensions && (field.accept.includes("application/pdf") || field.accept.includes(".pdf")) && !isPdf(file)) {
 			return `${field.label} must be a PDF file.`;
+		}
+		if (field.extensions && !field.extensions.some(extension => file.name.toLowerCase().endsWith(extension))) {
+			return `${field.label} must be a PDF, DOCX, XLSX, or PPTX file.`;
 		}
 	}
 	const options = readOptions();
+	if (state.tool === "protection") {
+		if (options.action === "add" && options.password !== options.confirmPassword) {
+			return "The new password and confirmation do not match.";
+		}
+		if (options.action === "add" && !options.password.trim()) return "Enter a new password.";
+		if (options.action === "remove-password" && !options.currentPassword.trim()) {
+			return "Enter the current file-open password. Use the editing-restrictions action to unlock Word or Excel editing locks.";
+		}
+		if (options.action === "remove-restrictions"
+			&& ![".docx", ".xlsx"].some(extension => state.files.get("file").name.toLowerCase().endsWith(extension))) {
+			return "Password-free editing-restriction removal supports only unencrypted DOCX and XLSX files.";
+		}
+	}
 	if (options.page && (!Number.isInteger(Number(options.page)) || Number(options.page) < 1)) return "Enter a page number greater than zero.";
 	if (options.pages && !/^\d+(?:\s*-\s*\d+)?(?:\s*,\s*\d+(?:\s*-\s*\d+)?)*$/.test(options.pages)) return "Enter pages as numbers or ranges, for example 1,3-5.";
+	try {
+		resultFilename();
+	} catch (error) {
+		return error.message;
+	}
 	return "";
 }
 
@@ -280,7 +597,7 @@ function buildRequest() {
 	const options = readOptions();
 	const form = new FormData();
 	let url;
-	let outputName;
+	const outputName = resultFilename();
 	let outputType;
 	switch (state.tool) {
 		case "view":
@@ -288,23 +605,21 @@ function buildRequest() {
 			url = "/api/pdf/info";
 			break;
 		case "merge":
-			form.append("files", state.files.get("first"));
-			form.append("files", state.files.get("second"));
+			for (const mergeFile of state.mergeFiles) {
+				form.append("files", mergeFile);
+			}
 			url = "/api/pdf/merge";
-			outputName = "merged.pdf";
 			outputType = "application/pdf";
 			break;
 		case "split":
 			form.append("file", file);
 			url = "/api/pdf/split";
-			outputName = "split-pages.zip";
 			outputType = "application/zip";
 			break;
 		case "extract":
 			form.append("file", file);
 			form.append("pages", options.pages);
 			url = "/api/pdf/extract";
-			outputName = "extracted-pages.pdf";
 			outputType = "application/pdf";
 			break;
 		case "rotate":
@@ -312,21 +627,31 @@ function buildRequest() {
 			form.append("page", options.page);
 			form.append("degrees", options.degrees);
 			url = "/api/pdf/rotate";
-			outputName = "rotated.pdf";
 			outputType = "application/pdf";
 			break;
 		case "toPdf":
 			form.append("file", file);
 			url = "/api/convert/to-pdf";
-			outputName = `${file.name.replace(/\.[^.]+$/, "")}.pdf`;
 			outputType = "application/pdf";
 			break;
 		case "fromPdf":
 			form.append("file", file);
 			form.append("format", options.format);
 			url = "/api/convert/from-pdf";
-			outputName = `${file.name.replace(/\.[^.]+$/, "")}.${options.format}`;
 			outputType = options.format === "txt" ? "text/plain" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+			break;
+		case "protection":
+			form.append("file", file);
+			if (options.action === "add") {
+				form.append("password", options.password);
+				url = "/api/protection/add";
+			} else if (options.action === "remove-password") {
+				form.append("currentPassword", options.currentPassword);
+				url = "/api/protection/remove";
+			} else {
+				url = "/api/protection/remove-restrictions";
+			}
+			outputType = file.type || (outputExtension() === "pdf" ? "application/pdf" : "application/octet-stream");
 			break;
 	}
 	return { form, url, outputName, outputType };
@@ -355,16 +680,23 @@ async function handleSubmit(event) {
 			state.pageCount = info.pageCount;
 			state.currentPage = 1;
 			showMetadata(info);
+			appendDownload(new Blob([state.files.get("file")], { type: "application/pdf" }),
+				request.outputName, "application/pdf");
 			await renderPage(state.files.get("file"), 1, info.pageCount);
 		} else {
 			const blob = await response.blob();
-			const filename = filenameFromHeader(response.headers.get("Content-Disposition")) || request.outputName;
-			showDownload(blob, filename, request.outputType, state.tool === "fromPdf" && request.outputType === "text/plain");
-			if (request.outputType === "application/pdf") {
-				const file = new File([blob], filename, { type: "application/pdf" });
+			showDownload(blob, request.outputName, request.outputType, state.tool === "fromPdf" && request.outputType === "text/plain");
+			if (request.outputType === "application/pdf" && state.tool !== "protection") {
+				const file = new File([blob], request.outputName, { type: "application/pdf" });
 				await inspectResultPdf(file);
 			} else if (request.outputType === "application/zip") {
 				showPreviewPlaceholder("Your split files are ready", "Download the ZIP to access each page as a separate PDF.");
+			} else if (state.tool === "protection") {
+				const action = readOptions().action;
+				const message = action === "add" ? "Your document is protected"
+					: action === "remove-restrictions" ? "Editing restrictions removed" : "Your document is unlocked";
+				showPreviewPlaceholder(message,
+					"Download the updated document using the filename you selected.");
 			}
 		}
 	} catch (error) {
@@ -387,18 +719,11 @@ async function readError(response) {
 	}
 }
 
-function filenameFromHeader(header) {
-	if (!header) return "";
-	const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
-	if (encoded) {
-		try { return decodeURIComponent(encoded[1].replace(/^"|"$/g, "")); } catch { return encoded[1]; }
-	}
-	return header.match(/filename="?([^";]+)"?/i)?.[1] ?? "";
-}
-
 function setLoading(loading) {
 	elements.submit.disabled = loading;
-	elements.submitLabel.textContent = loading ? "Working on your document…" : tools[state.tool].button;
+	const action = state.tool === "protection" ? document.querySelector("#option-action")?.value : null;
+	const defaultLabel = action === "remove" ? "Remove password" : tools[state.tool].button;
+	elements.submitLabel.textContent = loading ? "Working on your document…" : defaultLabel;
 	if (loading) elements.apiIndicator.style.background = "#d9aa54";
 }
 
@@ -506,7 +831,6 @@ function showMetadata(info) {
 
 function showDownload(blob, filename, type, showText) {
 	if (state.downloadUrl) URL.revokeObjectURL(state.downloadUrl);
-	state.downloadUrl = URL.createObjectURL(new Blob([blob], { type }));
 	elements.result.hidden = false;
 	elements.resultTitle.textContent = "Your file is ready";
 	elements.resultContent.replaceChildren();
@@ -516,6 +840,12 @@ function showDownload(blob, filename, type, showText) {
 		blob.text().then(text => { preview.textContent = text || "No selectable text was found in this PDF."; });
 		elements.resultContent.append(preview);
 	}
+	appendDownload(blob, filename, type);
+}
+
+function appendDownload(blob, filename, type) {
+	if (state.downloadUrl) URL.revokeObjectURL(state.downloadUrl);
+	state.downloadUrl = URL.createObjectURL(new Blob([blob], { type }));
 	const row = document.createElement("div");
 	row.className = "download-row";
 	const icon = document.createElement("span");
@@ -630,7 +960,9 @@ elements.nextPage.addEventListener("click", async () => {
 const savedApiUrl = localStorage.getItem("paperplane-api-url");
 elements.apiUrl.value = savedApiUrl === "http://localhost:8080"
 	? "http://localhost:7000"
-	: savedApiUrl || elements.apiUrl.value;
+	: savedApiUrl || (["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port === "6999"
+		? elements.apiUrl.value
+		: window.location.origin);
 elements.apiUrl.addEventListener("change", () => {
 	localStorage.setItem("paperplane-api-url", apiBase());
 	elements.apiIndicator.style.background = "#55b27c";
