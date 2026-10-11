@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="theme-color" content="#f6f7f9">
+		<meta name="description" content="A clean workspace to view, edit, merge, split, and convert PDF files.">
+		<title>Paperplane — PDF workspace</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+		<link rel="stylesheet" href="./styles.css">
+		<script src="./app.js" defer></script>
+	</head>
+	<body>
+		<div class="app-shell">
+			<aside class="sidebar">
+				<a class="brand" href="#" aria-label="Paperplane home">
+					<span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M27 5 5.8 13.2c-1 .4-1 1.8 0 2.2l8.1 3.2 3.2 8.1c.4 1 1.8 1 2.2 0L27.5 5.7c.2-.5-.1-.9-.5-.7ZM15 17l8-8-5.4 10.3-.9 4.1-1.8-5.3L9.6 16l5.4-1.8Z"/></svg></span>
+					<span>paperplane<span class="brand-dot">.</span></span>
+				</a>
+				<div class="sidebar-label">WORKSPACE</div>
+				<nav class="tool-nav" aria-label="PDF tools">
+					<button class="nav-item active" data-tool="view" type="button"><span class="nav-icon">▤</span> View & inspect <span class="nav-count">01</span></button>
+					<button class="nav-item" data-tool="merge" type="button"><span class="nav-icon">⇶</span> Merge PDFs</button>
+					<button class="nav-item" data-tool="split" type="button"><span class="nav-icon">⫶</span> Split PDF</button>
+					<button class="nav-item" data-tool="extract" type="button"><span class="nav-icon">▣</span> Extract pages</button>
+					<button class="nav-item" data-tool="rotate" type="button"><span class="nav-icon">↻</span> Rotate page</button>
+				</nav>
+				<div class="sidebar-label convert-label">CONVERT</div>
+				<nav class="tool-nav" aria-label="Conversion tools">
+					<button class="nav-item" data-tool="toPdf" type="button"><span class="nav-icon">↗</span> Documents to PDF</button>
+					<button class="nav-item" data-tool="fromPdf" type="button"><span class="nav-icon">↙</span> PDF to Word / text</button>
+				</nav>
+				<div class="sidebar-spacer"></div>
+				<div class="privacy-card">
+					<span class="privacy-icon">✳</span>
+					<strong>Your files stay yours</strong>
+					<p>Files are processed by your local backend and are not stored by this interface.</p>
+				</div>
+				<div class="sidebar-footer"><span class="status-dot"></span> Local workspace <span class="version">v1.0</span></div>
+			</aside>
+
+			<main class="main-area">
+				<header class="topbar">
+					<div class="breadcrumb"><span>Workspace</span><span class="crumb-slash">/</span><strong id="breadcrumbTool">View & inspect</strong></div>
+					<div class="topbar-right">
+						<div class="api-setting">
+							<span class="api-indicator" id="apiIndicator"></span>
+							<label for="apiUrl">API</label>
+							<input id="apiUrl" type="url" value="http://localhost:8080" spellcheck="false" aria-label="Backend API base URL">
+						</div>
+						<button class="avatar" type="button" aria-label="Local workspace">P</button>
+					</div>
+				</header>
+
+				<div class="content">
+					<section class="welcome-row">
+						<div>
+							<p class="eyebrow"><span class="eyebrow-star">✳</span> YOUR DOCUMENT WORKSPACE</p>
+							<h1 id="pageTitle">Make room for <span>good work.</span></h1>
+							<p class="welcome-copy" id="pageDescription">Everything you need to view, organize, and fine-tune your PDFs.</p>
+						</div>
+						<div class="welcome-decoration" aria-hidden="true">
+							<span class="float-sheet sheet-back"></span><span class="float-sheet sheet-front"><i></i><i></i><i></i><b>PDF</b></span>
+							<span class="deco-spark deco-one">✳</span><span class="deco-spark deco-two">✳</span>
+						</div>
+					</section>
+
+					<div class="workspace-grid">
+						<section class="work-card" aria-labelledby="activeToolTitle">
+							<div class="card-heading">
+								<div class="tool-heading-icon" id="toolIcon">▤</div>
+								<div><div class="heading-kicker">PDF TOOL</div><h2 id="activeToolTitle">View & inspect</h2></div>
+								<span class="secure-badge"><span>✓</span> PRIVATE & SECURE</span>
+							</div>
+							<p class="tool-description" id="toolDescription">Take a closer look at your PDF. Check its pages and preview them right here.</p>
+
+							<form id="toolForm">
+								<div id="fileFields" class="file-fields"></div>
+								<div id="optionFields" class="option-fields"></div>
+								<div id="formError" class="form-error" role="alert" hidden></div>
+								<button id="submitButton" class="primary-button" type="submit">
+									<span id="submitLabel">Choose a PDF to get started</span><span class="button-arrow">→</span>
+								</button>
+								<p class="size-hint"><span>ⓘ</span> Maximum file size: 50 MB per file</p>
+							</form>
+
+							<div class="result-panel" id="resultPanel" hidden aria-live="polite">
+								<div class="result-heading"><div><span class="result-check">✓</span><strong id="resultTitle">All done!</strong></div><button type="button" class="text-button" id="clearResult">Clear</button></div>
+								<div id="resultContent"></div>
+							</div>
+						</section>
+
+						<aside class="side-column">
+							<section class="preview-card">
+								<div class="preview-top"><div><span class="preview-label">LIVE PREVIEW</span><h3>Document preview</h3></div><span class="preview-file-icon">▤</span></div>
+								<div class="preview-canvas" id="previewCanvas">
+									<div class="preview-empty">
+										<div class="empty-file"><span>PDF</span><i></i><i></i><i></i><i></i></div>
+										<strong>Your document will appear here</strong>
+										<span>Choose a PDF to see it in action</span>
+									</div>
+								</div>
+								<div class="preview-controls" id="previewControls" hidden>
+									<button type="button" id="prevPage" aria-label="Previous page">‹</button>
+									<span>Page <strong id="previewPageNumber">1</strong> <span class="of-label">of</span> <strong id="previewPageCount">1</strong></span>
+									<button type="button" id="nextPage" aria-label="Next page">›</button>
+									<span class="preview-zoom">Fit to view</span>
+								</div>
+							</section>
+
+							<section class="tips-card">
+								<div class="tips-heading"><span>✦</span> GOOD TO KNOW</div>
+								<p id="tipsCopy">Your PDF is processed locally by the backend. Only selectable text is extracted during conversion.</p>
+							</section>
+
+							<div class="format-strip"><span class="format-icon">PDF</span><div><strong>Made for your files</strong><span>PDF · DOCX · TXT · and more</span></div><span class="format-arrow">↗</span></div>
+						</aside>
+					</div>
+					<footer class="page-footer"><span>Made for the work that matters.</span><span>Paperplane <span class="brand-dot">✳</span></span></footer>
+				</div>
+			</main>
+		</div>
+		<div class="toast" id="toast" role="status" aria-live="polite"></div>
+	</body>
+</html>
