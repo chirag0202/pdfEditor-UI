@@ -4,11 +4,15 @@ Standalone browser UI for the PDF editor backend. No frontend dependencies or bu
 
 ## Run locally
 
-1. Start the backend from `pdfEditor-v1` with `.\mvnw.cmd spring-boot:run`.
-2. In this folder, run `python -m http.server 5173`.
-3. Open `http://localhost:5173` in your browser. The backend allows this default local CORS origin.
+1. Start the backend from `pdfEditor-v1` with `.\mvnw.cmd spring-boot:run` (API port `7000`).
+2. In this folder, run `python -m http.server 6999`.
+3. Open `http://localhost:6999` in your browser. The backend allows this default local CORS origin.
 
 The API URL can be changed in the top-right corner and is remembered in browser storage.
+
+For a Fedora workstation deployment that builds the backend and launches both servers, see the [backend Fedora deployment instructions](../pdfEditor-v1/README.md#fedora-workstation-build-and-launch).
+
+For Windows build, deployment, and launch scripts, see the [backend Windows instructions](../pdfEditor-v1/README.md#windows-build-and-launch).
 
 ## Available tools
 

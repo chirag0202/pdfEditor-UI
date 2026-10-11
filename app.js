@@ -627,7 +627,10 @@ elements.nextPage.addEventListener("click", async () => {
 		showToast(error.message, true);
 	}
 });
-elements.apiUrl.value = localStorage.getItem("paperplane-api-url") || elements.apiUrl.value;
+const savedApiUrl = localStorage.getItem("paperplane-api-url");
+elements.apiUrl.value = savedApiUrl === "http://localhost:8080"
+	? "http://localhost:7000"
+	: savedApiUrl || elements.apiUrl.value;
 elements.apiUrl.addEventListener("change", () => {
 	localStorage.setItem("paperplane-api-url", apiBase());
 	elements.apiIndicator.style.background = "#55b27c";
